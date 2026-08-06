@@ -60,6 +60,68 @@
             cell.setAttribute('data-index', i);
             grid.appendChild(cell);
         }
+
+        // Mine placement and adjacency counting
+        function initializeGame() {
+            // Create a 9x9 board representation (array of 81 elements)
+            const board = new Array(81).fill(0);
+
+            // Place 10 mines randomly
+            let minesPlaced = 0;
+            while (minesPlaced < 10) {
+                const randomIndex = Math.floor(Math.random() * 81);
+                if (board[randomIndex] !== 'M') {
+                    board[randomIndex] = 'M';
+                    minesPlaced++;
+                }
+            }
+
+            // Calculate adjacency counts for non-mine cells
+            for (let i = 0; i < 81; i++) {
+                if (board[i] !== 'M') {
+                    let count = 0;
+
+                    // Check all 8 adjacent cells (including diagonals)
+                    const row = Math.floor(i / 9);
+                    const col = i % 9;
+
+                    for (let r = Math.max(0, row - 1); r <= Math.min(8, row + 1); r++) {
+                        for (let c = Math.max(0, col - 1); c <= Math.min(8, col + 1); c++) {
+                            // Skip the cell itself
+                            if (r === row && c === col) continue;
+
+                            const adjacentIndex = r * 9 + c;
+                            if (board[adjacentIndex] === 'M') {
+                                count++;
+                            }
+                        }
+                    }
+
+                    board[i] = count;
+                }
+            }
+
+            // Log the full board state to console
+            console.log("Minesweeper Board State:");
+            let boardString = "";
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    const index = i * 9 + j;
+                    if (board[index] === 'M') {
+                        boardString += "M ";
+                    } else {
+                        boardString += board[index] + " ";
+                    }
+                }
+                boardString += "\n";
+            }
+            console.log(boardString);
+
+            return board;
+        }
+
+        // Initialize the game
+        const gameBoard = initializeGame();
     </script>
 </body>
 

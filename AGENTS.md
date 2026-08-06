@@ -22,12 +22,19 @@ This is intentionally a **single HTML file** (`index.html`) with inline `<style>
 There is no install step and no build step.
 
 ```bash
-# open the game — no server needed
-open index.html
+# browser verification — do not start a server for this
+# use Cline's browser tool with a file:// URL directly, e.g.:
+# file:///Users/bemoy/Developer/Minesweeper/index.html
 
-# if a local server is ever needed for a later feature, use Python's built-in one — do not add a dependency for this
+# fallback only if the browser tool cannot load a file:// URL:
 python3 -m http.server 8000
+
+# stop that fallback server (do not use "kill %1" — it relies on
+# shell job-table state that may not persist across tool calls):
+lsof -ti:8000 | xargs kill
 ```
+
+**Browser verification default:** navigate directly to the file with an absolute `file://` path (see above). Do not start a local server for this project unless the `file://` approach genuinely fails — this is a static file with no server-side logic, so a server adds a process to manage for no benefit. If a server was started for any reason, stop it with the `lsof` command above before finishing the task, not `kill %1`.
 
 There is no single-test-file command for this project since there is no test framework — see Validation below for how to check correctness instead.
 
