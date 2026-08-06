@@ -122,6 +122,70 @@
 
         // Initialize the game
         const gameBoard = initializeGame();
+
+        // Add click event listeners to cells
+        const cells = document.querySelectorAll('.cell');
+
+        // Track revealed cells to prevent re-revealing
+        const revealedCells = new Set();
+
+        // Game over flag
+        let gameOver = false;
+
+        function revealCell(index) {
+            // Don't reveal if already revealed or flagged
+            if (revealedCells.has(index)) return;
+
+            revealedCells.add(index);
+
+            const cell = cells[index];
+            const value = gameBoard[index];
+
+            // Update cell display
+            if (value === 'M') {
+                // Mine - show mine symbol
+                cell.textContent = '💣';
+                cell.style.backgroundColor = '#f00';
+                // Game over - stop further interaction for now
+                gameOver = true;
+                return;
+            } else {
+                // Show the adjacency count or empty if 0
+                cell.textContent = value > 0 ? value : '';
+                cell.style.backgroundColor = '#fff';
+
+                // If this is a 0, reveal all connected cells (flood-fill)
+                if (value === 0) {
+                    revealAdjacentCells(index);
+                }
+            }
+        }
+
+        function revealAdjacentCells(index) {
+            const row = Math.floor(index / 9);
+            const col = index % 9;
+
+            // Check all 8 adjacent cells
+            for (let r = Math.max(0, row - 1); r <= Math.min(8, row + 1); r++) {
+                for (let c = Math.max(0, col - 1); c <= Math.min(8, col + 1); c++) {
+                    // Skip the cell itself
+                    if (r === row && c === col) continue;
+
+                    const adjacentIndex = r * 9 + c;
+
+                    // Reveal this adjacent cell if not already revealed
+                    revealCell(adjacentIndex);
+                }
+            }
+        }
+
+        // Add click event listeners to all cells
+        cells.forEach((cell, index) => {
+            cell.addEventListener('click', () => {
+                if (gameOver) return;
+                revealCell(index);
+            });
+        });
     </script>
 </body>
 
