@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# --- Not needed yet, but harmless to have ready ---
+# If this project ever grows a dependency or build step
+# (against the current plan in AGENTS.md — ask first),
+# these would apply:
+node_modules/
+dist/
+.env
