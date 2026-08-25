@@ -21,12 +21,10 @@ This is intentionally a **single HTML file** (`index.html`) with inline `<style>
 
 There is no install step and no build step.
 
-```bash
-# browser verification — do not start a server for this
-# use Cline's browser tool with a file:// URL directly, e.g.:
-# file:///Users/bemoy/Developer/Minesweeper/index.html
+This agent cannot reliably interact with a live browser window. Do not attempt browser-based verification, and do not claim to have opened, screenshotted, or tested the page in a browser — that claim has proven unreliable and should never be made. If a scratch server or test file is created for any other reason, stop and clean it up before finishing:
 
-# fallback only if the browser tool cannot load a file:// URL:
+```bash
+# fallback only if genuinely needed for a non-browser test (e.g. a Node-based script):
 python3 -m http.server 8000
 
 # stop that fallback server (do not use "kill %1" — it relies on
@@ -34,13 +32,12 @@ python3 -m http.server 8000
 lsof -ti:8000 | xargs kill
 ```
 
-**Browser verification default:** navigate directly to the file with an absolute `file://` path (see above). Do not start a local server for this project unless the `file://` approach genuinely fails — this is a static file with no server-side logic, so a server adds a process to manage for no benefit. If a server was started for any reason, stop it with the `lsof` command above before finishing the task, not `kill %1`.
-
 There is no single-test-file command for this project since there is no test framework — see Validation below for how to check correctness instead.
 
 ## Working Rules
 
-- Work in small, reviewable changes — one feature per task (grid rendering, then mine placement, then reveal logic, then flags/win/loss, then polish). Do not combine two of these into one change.
+- Work in small, reviewable changes — one feature per task. Do not combine two features into one change.
+- **Isolate cross-cutting state from self-contained logic.** A rule that must be enforced at every point of interaction (like "stop the game after a mine is revealed") is a different kind of work than an algorithm that lives in one function (like flood-fill). If a step would bundle both, split it: implement the self-contained logic first with the state rule explicitly deferred, then add the state rule as its own small, isolated change afterward, applied everywhere interaction happens.
 - Explain the plan before editing.
 - Do not rewrite unrelated parts of the file.
 - Do not add a framework, build tool, or external library "to make this easier." If something feels like it needs one, say so and stop rather than adding it.
@@ -58,12 +55,12 @@ There is no single-test-file command for this project since there is no test fra
 
 ## Validation
 
-There is no automated test suite for this project. Before considering a change complete:
+This agent cannot reliably verify visual or interactive behavior on its own — do not claim to have opened a browser, taken a screenshot, or visually confirmed something. That claim has proven unreliable twice already on this project and should never be made again. Before considering a change complete:
 
-- Use the browser tool to load `index.html` and take a screenshot to confirm it renders as expected.
-- For logic changes (mine placement, adjacency counts, flood-fill, win/loss), use the browser tool to click through a specific scenario and confirm the visible result is correct — describe which scenario you tested.
-- Specifically verify the flood-fill does not reveal mines and does not cross into cells that already show a number — this is the most likely place for a subtle bug.
-- If a check cannot be run (e.g. the browser tool isn't available), say so explicitly rather than assuming it works.
+- For logic that can be checked without a browser (mine placement, adjacency counts, win-condition logic, flood-fill boundaries), write a small test script — a separate scratch file or a temporary console-based check — that asserts the expected behavior, run it, and report the actual output. Delete any scratch test file before finishing the task (see Common Commands).
+- For anything visual or interactive (does the grid render correctly, does a click behave as expected, does a message appear, does a state guard actually stop further interaction), do not claim to have tested this yourself. Ask the user to verify a specific scenario, stating exactly what to click and what to expect.
+- For any change to a state guard (game-over, win, flag interaction), explicitly ask the user to test it from more than one entry point, not just the one that sets it — this is where the two real bugs on this project happened.
+- If a check cannot be run, explain why.
 
 ## Sensitive Areas
 
