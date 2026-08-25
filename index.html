@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Minesweeper</title>
+    <style>
+      :root {
+        --cell-size: 32px;
+        --grid-line: #c9c9c9;
+        --cell-bg: #f7f7f7;
+        --cell-hover: #e2e2e2;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #e6e6e6;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+
+      /* 9x9 grid of fixed-size cells. We get uniform 1px lines everywhere
+         (including the outer edge) by giving the container the top+left
+         borders and each cell its right+bottom borders. */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(9, var(--cell-size));
+        grid-template-rows: repeat(9, var(--cell-size));
+        border-top: 1px solid var(--grid-line);
+        border-left: 1px solid var(--grid-line);
+      }
+
+      .cell {
+        width: var(--cell-size);
+        height: var(--cell-size);
+        box-sizing: border-box;
+        border-right: 1px solid var(--grid-line);
+        border-bottom: 1px solid var(--grid-line);
+        background: var(--cell-bg);
+        cursor: pointer;
+      }
+
+      .cell:hover {
+        background: var(--cell-hover);
+      }
+
+      .cell.revealed {
+        background: #dcdcdc;
+        cursor: default;
+      }
+
+      /* A revealed cell's adjacency number. Mine cells show no number. */
+      .cell.revealed[data-count] {
+        font-size: calc(var(--cell-size) * 0.5);
+        font-weight: bold;
+        text-align: center;
+        line-height: var(--cell-size);
+      }
+
+      /* Revealed mine. Game-over behavior is a separate task -- this is
+         just a visible "this cell was a mine" state. */
+      .cell.revealed.mine {
+        background: #b3b3b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid" id="grid"></div>
+
+    <script>
+      // Build the 9x9 grid of empty cells. No game logic yet -- this only
+      // creates the DOM nodes so the grid is present on page load.
+      function buildGrid() {
+        const grid = document.querySelector("#grid");
+        const rows = 9;
+        const cols = 9;
+
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const cellIndex = row * cols + col;
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            cell.dataset.row = row;
+            cell.dataset.col = col;
+            cell.dataset.index = cellIndex;
+            grid.appendChild(cell);
+          }
+        }
+      }
+
+      buildGrid();
+
+      // ---- Mine placement and adjacency counting ----
+      //
+      // Pure functions: no DOM, no UI. The grid cells on the page are still
+      // blank -- displaying these numbers is a later step.
+
+      // Pick `mineCount` distinct, uniformly random cells out of a rows x
+      // cols grid. Returns a flat array of rows*cols booleans (true = mine).
+      // `rng` is optional (defaults to Math.random) so tests can pass a
+      // deterministic generator and re-check the same board.
+      function placeMines(rows, cols, mineCount, rng) {
+        const random = rng || Math.random;
+        const totalCells = rows * cols;
+
+        // Selection without replacement: for each mine slot in turn, swap a
+        // random cell from the remaining pool into place. Every cell has an
+        // equal chance of landing in a mine slot, and no cell is picked twice.
+        const indices = [];
+        for (let i = 0; i < totalCells; i++) indices.push(i);
+
+        for (let i = 0; i < mineCount; i++) {
+          const j = i + Math.floor(random() * (totalCells - i));
+          const temp = indices[i];
+          indices[i] = indices[j];
+          indices[j] = temp;
+        }
+
+        const board = new Array(totalCells).fill(false);
+        for (let i = 0; i < mineCount; i++) board[indices[i]] = true;
+        return board;
+      }
+
+      // Count, for each non-mine cell, how many of its up to 8 neighbors
+      // (including diagonals) are mines. Returns a flat array of the same
+      // length; mine cells are left at 0.
+      function countAdjacentMines(board, rows, cols) {
+        const counts = new Array(board.length).fill(0);
+
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const cellIndex = row * cols + col;
+            if (board[cellIndex]) continue; // mines don't get a count
+
+            let adjacentMines = 0;
+            for (let deltaRow = -1; deltaRow <= 1; deltaRow++) {
+              for (let deltaCol = -1; deltaCol <= 1; deltaCol++) {
+                if (deltaRow === 0 && deltaCol === 0) continue; // skip self
+                const neighborRow = row + deltaRow;
+                const neighborCol = col + deltaCol;
+                // Edge/corner cells have fewer neighbors; out-of-grid
+                // positions are skipped, which keeps their counts correct.
+                if (neighborRow < 0 || neighborRow >= rows) continue;
+                if (neighborCol < 0 || neighborCol >= cols) continue;
+                if (board[neighborRow * cols + neighborCol]) adjacentMines++;
+              }
+            }
+            counts[cellIndex] = adjacentMines;
+          }
+        }
+        return counts;
+      }
+
+      // This page's board for the game.
+      const rows = 9;
+      const cols = 9;
+      const mineCount = 10;
+      const mineBoard = placeMines(rows, cols, mineCount);
+      const adjacencyCounts = countAdjacentMines(mineBoard, rows, cols);
+      // Which cells the player has opened. Tracked here, not by reading the
+      // DOM, so the game state stays in one place.
+      const revealed = new Array(rows * cols).fill(false);
+
+      // ---- Reveal + flood-fill (no game-over logic in this step) ----
+      //
+      // Pure functions of the board data: no DOM, so the flood-fill behavior
+      // can be tested with a fixed board.
+
+      // Flood-fill reveal: given a starting cell, return the flat array of
+      // cell indices that get revealed. Standard Minesweeper rule: opening a
+      // cell with 0 adjacent mines also opens every 0-cell reachable through
+      // the 8-neighborhood, and the numbered cells that border that region.
+      // A cell that has any adjacent mine (or is a mine) is revealed but
+      // never expanded into -- numbered cells are the region's boundary, and
+      // a mine just reveals itself here. Stopping the game on a mine click
+      // is deliberately NOT part of this step; that guard arrives next.
+      //
+      // Uses an explicit stack instead of recursion: a large open area would
+      // otherwise mean a 9x9-sized chain of calls per click.
+      function floodFill(startIndex, adjacencyCounts, mineBoard, rows, cols) {
+        const revealedSet = new Set();
+        const stack = [startIndex];
+
+        while (stack.length > 0) {
+          const cellIndex = stack.pop();
+          if (revealedSet.has(cellIndex)) continue;
+          revealedSet.add(cellIndex);
+
+          const row = Math.floor(cellIndex / cols);
+          const col = cellIndex % cols;
+          const adjacentMines = adjacencyCounts[cellIndex];
+          const isMine = mineBoard[cellIndex];
+
+          // A mine, or a cell with adjacent mines, reveals itself but does
+          // not propagate: these are exactly what stop the fill.
+          if (isMine || adjacentMines !== 0) continue;
+
+          // 0-cell: queue all in-bounds neighbors (out-of-grid positions are
+          // skipped, so the fill never crosses an edge) for processing on
+          // the next iteration.
+          for (let deltaRow = -1; deltaRow <= 1; deltaRow++) {
+            for (let deltaCol = -1; deltaCol <= 1; deltaCol++) {
+              if (deltaRow === 0 && deltaCol === 0) continue; // skip self
+              const neighborRow = row + deltaRow;
+              const neighborCol = col + deltaCol;
+              if (neighborRow < 0 || neighborRow >= rows) continue;
+              if (neighborCol < 0 || neighborCol >= cols) continue;
+              stack.push(neighborRow * cols + neighborCol);
+            }
+          }
+        }
+        return Array.from(revealedSet);
+      }
+
+      // Decide which cells open when one cell is clicked: itself, or the
+      // whole connected 0-region if the click landed on a 0-cell.
+      function revealCell(cellIndex, adjacencyCounts, mineBoard, rows, cols) {
+        if (adjacencyCounts[cellIndex] === 0 && !mineBoard[cellIndex]) {
+          return floodFill(cellIndex, adjacencyCounts, mineBoard, rows, cols);
+        }
+        return [cellIndex];
+      }
+
+      // ---- Reveal: DOM ----
+
+      // Show one cell in its revealed state: number, blank, or mine.
+      function paintCell(cellIndex) {
+        const cell = document.querySelector(
+          ".cell[data-index='" + cellIndex + "']"
+        );
+        if (cell.dataset.revealed === "true") return;
+        cell.dataset.revealed = "true";
+        cell.classList.add("revealed");
+        if (mineBoard[cellIndex]) {
+          cell.classList.add("mine");
+        } else if (adjacencyCounts[cellIndex] > 0) {
+          cell.textContent = String(adjacencyCounts[cellIndex]);
+          cell.dataset.count = String(adjacencyCounts[cellIndex]);
+        }
+      }
+
+      // One delegated listener on the grid: look up the clicked cell,
+      // compute the cells to open, paint them, and record them as revealed.
+      document.querySelector("#grid").addEventListener("click", (event) => {
+        const cell = event.target.closest(".cell");
+        if (!cell) return;
+        const cellIndex = Number(cell.dataset.index);
+
+        const indices = revealCell(
+          cellIndex,
+          adjacencyCounts,
+          mineBoard,
+          rows,
+          cols
+        );
+        for (const index of indices) {
+          revealed[index] = true;
+          paintCell(index);
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -55,12 +55,13 @@ There is no single-test-file command for this project since there is no test fra
 
 ## Validation
 
-This agent cannot reliably verify visual or interactive behavior on its own — do not claim to have opened a browser, taken a screenshot, or visually confirmed something. That claim has proven unreliable twice already on this project and should never be made again. Before considering a change complete:
+This agent cannot reliably verify visual or interactive behavior on its own — do not claim to have opened a browser, taken a screenshot, or visually confirmed something. That claim has proven unreliable twice already on this project and should never be made again.
 
-- For logic that can be checked without a browser (mine placement, adjacency counts, win-condition logic, flood-fill boundaries), write a small test script — a separate scratch file or a temporary console-based check — that asserts the expected behavior, run it, and report the actual output. Delete any scratch test file before finishing the task (see Common Commands).
-- For anything visual or interactive (does the grid render correctly, does a click behave as expected, does a message appear, does a state guard actually stop further interaction), do not claim to have tested this yourself. Ask the user to verify a specific scenario, stating exactly what to click and what to expect.
-- For any change to a state guard (game-over, win, flag interaction), explicitly ask the user to test it from more than one entry point, not just the one that sets it — this is where the two real bugs on this project happened.
-- If a check cannot be run, explain why.
+**Manual testing by the user is the default for interaction and state.** For anything about how the game behaves when played — does a click reveal correctly, does a state guard (game-over, win, flag) actually stop further interaction, does restart reset everything — do not write a test script. Ask the user to test a specific scenario directly in the browser, stating exactly what to do and what to expect. This is not a fallback; it is usually the *better* check, because it tests the real running page rather than a script that might reimplement the same logic separately and drift from what the file actually does. For any change to a state guard specifically, ask the user to test it from more than one entry point, not just the one that sets it — this is where the two real bugs on this project happened.
+
+**Write a test script only when verification requires checking something exhaustively or numerically that isn't practical to eyeball** — for example, confirming all 81 cells have the correct adjacency count, or confirming an exact count (like total mines) across the whole board. If a script is written, it must exercise the actual code in `index.html`, not a separate reimplementation of the same logic — state clearly which one it does. Delete any scratch test file before finishing the task (see Common Commands).
+
+If a check cannot be run, explain why.
 
 ## Sensitive Areas
 
