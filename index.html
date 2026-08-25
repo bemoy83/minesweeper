@@ -65,6 +65,15 @@
       .cell.revealed.mine {
         background: #b3b3b3;
       }
+
+      /* Flagged cell: the flag glyph itself is set by JS (textContent) on
+         right-click; this only centers it, matching the revealed-number
+         styling. */
+      .cell.flagged {
+        font-size: calc(var(--cell-size) * 0.5);
+        text-align: center;
+        line-height: var(--cell-size);
+      }
     </style>
   </head>
   <body>
@@ -163,6 +172,9 @@
       // Which cells the player has opened. Tracked here, not by reading the
       // DOM, so the game state stays in one place.
       const revealed = new Array(rows * cols).fill(false);
+      // Which cells carry a flag (only ever unrevealed cells). Tracked the
+      // same way as `revealed`.
+      const flagged = new Array(rows * cols).fill(false);
       // Game-over flag: once a mine is revealed, every interaction check
       // consults this before touching game state.
       let gameOver = false;
@@ -178,18 +190,24 @@
       // the 8-neighborhood, and the numbered cells that border that region.
       // A cell that has any adjacent mine (or is a mine) is revealed but
       // never expanded into -- numbered cells are the region's boundary, and
-      // a mine just reveals itself here. Stopping the game on a mine
-      // reveal (the gameOver guard) lives in the click handler below.
+      // a mine just reveals itself here. A flagged cell (from the `flagged`
+      // array) is skipped entirely: not revealed and not expanded into, so
+      // the fill stops at it and can never cross through it. Stopping the
+      // game on a mine reveal (the gameOver guard) and refusing direct
+      // clicks on flagged cells live in the handlers below.
       //
       // Uses an explicit stack instead of recursion: a large open area would
       // otherwise mean a 9x9-sized chain of calls per click.
-      function floodFill(startIndex, adjacencyCounts, mineBoard, rows, cols) {
+      function floodFill(startIndex, adjacencyCounts, mineBoard, rows, cols, flagged) {
         const revealedSet = new Set();
         const stack = [startIndex];
 
         while (stack.length > 0) {
           const cellIndex = stack.pop();
           if (revealedSet.has(cellIndex)) continue;
+          // Flagged cells act like mines in the fill: the cascade stops at
+          // them and cannot reach any cell only reachable through one.
+          if (flagged[cellIndex]) continue;
           revealedSet.add(cellIndex);
 
           const row = Math.floor(cellIndex / cols);
@@ -220,9 +238,9 @@
 
       // Decide which cells open when one cell is clicked: itself, or the
       // whole connected 0-region if the click landed on a 0-cell.
-      function revealCell(cellIndex, adjacencyCounts, mineBoard, rows, cols) {
+      function revealCell(cellIndex, adjacencyCounts, mineBoard, rows, cols, flagged) {
         if (adjacencyCounts[cellIndex] === 0 && !mineBoard[cellIndex]) {
-          return floodFill(cellIndex, adjacencyCounts, mineBoard, rows, cols);
+          return floodFill(cellIndex, adjacencyCounts, mineBoard, rows, cols, flagged);
         }
         return [cellIndex];
       }
@@ -256,12 +274,18 @@
         // further interaction so state and the board can't change anymore.
         if (gameOver) return;
 
+        // A flagged cell can't be opened with a left-click; right-click it
+        // again to remove the flag first. (The fill also never cascades
+        // through flagged cells.)
+        if (flagged[cellIndex]) return;
+
         const indices = revealCell(
           cellIndex,
           adjacencyCounts,
           mineBoard,
           rows,
-          cols
+          cols,
+          flagged
         );
         for (const index of indices) {
           revealed[index] = true;
@@ -275,6 +299,33 @@
           gameOver = true;
         }
       });
+
+      // Right-click: toggle a flag on an unrevealed cell (flag it, or remove
+      // it if already flagged). Delegated on the grid, like the click
+      // handler.
+      document
+        .querySelector("#grid")
+        .addEventListener("contextmenu", (event) => {
+          // Suppress the browser's context menu over the grid, even when
+          // the right-click itself does nothing (revealed cell, game over).
+          event.preventDefault();
+
+          const cell = event.target.closest(".cell");
+          if (!cell) return;
+          const cellIndex = Number(cell.dataset.index);
+
+          // Same game-over guard as the click handler: once a mine has been
+          // revealed, no further interaction of any kind.
+          if (gameOver) return;
+
+          // Flags only go on unrevealed cells.
+          if (revealed[cellIndex]) return;
+
+          // Toggle: right-clicking a flagged cell removes the flag.
+          flagged[cellIndex] = !flagged[cellIndex];
+          cell.classList.toggle("flagged", flagged[cellIndex]);
+          cell.textContent = flagged[cellIndex] ? "🚩" : "";
+        });
     </script>
   </body>
 </html>
