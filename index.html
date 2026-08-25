@@ -163,8 +163,11 @@
       // Which cells the player has opened. Tracked here, not by reading the
       // DOM, so the game state stays in one place.
       const revealed = new Array(rows * cols).fill(false);
+      // Game-over flag: once a mine is revealed, every interaction check
+      // consults this before touching game state.
+      let gameOver = false;
 
-      // ---- Reveal + flood-fill (no game-over logic in this step) ----
+      // ---- Reveal + flood-fill (game-over guard handled in the handler) ----
       //
       // Pure functions of the board data: no DOM, so the flood-fill behavior
       // can be tested with a fixed board.
@@ -175,8 +178,8 @@
       // the 8-neighborhood, and the numbered cells that border that region.
       // A cell that has any adjacent mine (or is a mine) is revealed but
       // never expanded into -- numbered cells are the region's boundary, and
-      // a mine just reveals itself here. Stopping the game on a mine click
-      // is deliberately NOT part of this step; that guard arrives next.
+      // a mine just reveals itself here. Stopping the game on a mine
+      // reveal (the gameOver guard) lives in the click handler below.
       //
       // Uses an explicit stack instead of recursion: a large open area would
       // otherwise mean a 9x9-sized chain of calls per click.
@@ -249,6 +252,10 @@
         if (!cell) return;
         const cellIndex = Number(cell.dataset.index);
 
+        // Game-over guard: once a mine has been revealed, ignore all
+        // further interaction so state and the board can't change anymore.
+        if (gameOver) return;
+
         const indices = revealCell(
           cellIndex,
           adjacencyCounts,
@@ -259,6 +266,13 @@
         for (const index of indices) {
           revealed[index] = true;
           paintCell(index);
+        }
+
+        // Reveal this cell is a mine = game over. This is the only way a
+        // mine can be revealed: flood-fill starts from 0-cells, and 0-cells
+        // have no adjacent mines, so a fill can never surface one.
+        if (mineBoard[cellIndex]) {
+          gameOver = true;
         }
       });
     </script>
