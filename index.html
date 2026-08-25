@@ -16,6 +16,7 @@
         min-height: 100vh;
         margin: 0;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         background: #e6e6e6;
@@ -74,9 +75,26 @@
         text-align: center;
         line-height: var(--cell-size);
       }
+
+      /* Win/loss banner above the grid: empty until the game ends, then
+         .win / .loss (set by JS) colors it. min-height keeps the grid from
+         shifting down when the text appears. */
+      .message {
+        min-height: 24px;
+        margin-bottom: 8px;
+        font-size: 20px;
+        font-weight: bold;
+      }
+      .message.win {
+        color: #1a7f37;
+      }
+      .message.loss {
+        color: #b3261e;
+      }
     </style>
   </head>
   <body>
+    <div class="message" id="message"></div>
     <div class="grid" id="grid"></div>
 
     <script>
@@ -178,6 +196,10 @@
       // Game-over flag: once a mine is revealed, every interaction check
       // consults this before touching game state.
       let gameOver = false;
+      // Win flag: once every non-mine cell is revealed, the same guard in
+      // the handlers freezes the board. The handler checks the mine (loss)
+      // first, so the board ends in exactly one terminal state, never both.
+      let gameWon = false;
 
       // ---- Reveal + flood-fill (game-over guard handled in the handler) ----
       //
@@ -245,6 +267,26 @@
         return [cellIndex];
       }
 
+      // Win check: the game is won when every non-mine cell is revealed.
+      // Flags are irrelevant to winning -- flags can only sit on unrevealed
+      // cells, so a flagged safe cell simply counts as not-yet-revealed,
+      // and a flagged mine is just a mine.
+      function checkWin(mineBoard, revealed, rows, cols) {
+        for (let cellIndex = 0; cellIndex < rows * cols; cellIndex++) {
+          if (!mineBoard[cellIndex] && !revealed[cellIndex]) return false;
+        }
+        return true;
+      }
+
+      // Win/loss banner: one shared element, text + class set by JS. It is
+      // only ever set once, because the first terminal state (win or loss)
+      // freezes the board.
+      const messageEl = document.querySelector("#message");
+      function showMessage(text, cssClass) {
+        messageEl.textContent = text;
+        messageEl.classList.add(cssClass);
+      }
+
       // ---- Reveal: DOM ----
 
       // Show one cell in its revealed state: number, blank, or mine.
@@ -270,9 +312,10 @@
         if (!cell) return;
         const cellIndex = Number(cell.dataset.index);
 
-        // Game-over guard: once a mine has been revealed, ignore all
+        // Terminal-state guards: once the game is over or won, ignore all
         // further interaction so state and the board can't change anymore.
         if (gameOver) return;
+        if (gameWon) return;
 
         // A flagged cell can't be opened with a left-click; right-click it
         // again to remove the flag first. (The fill also never cascades
@@ -292,11 +335,21 @@
           paintCell(index);
         }
 
-        // Reveal this cell is a mine = game over. This is the only way a
-        // mine can be revealed: flood-fill starts from 0-cells, and 0-cells
-        // have no adjacent mines, so a fill can never surface one.
+        // Reveal this cell is a mine = game over, loss message. This is the
+        // only way a mine can be revealed: flood-fill starts from 0-cells,
+        // and 0-cells have no adjacent mines, so a fill can never surface
+        // one. Checked before the win check: a final unclicked mine is a
+        // loss even if every safe cell was already open.
         if (mineBoard[cellIndex]) {
           gameOver = true;
+          showMessage("You lose!", "loss");
+          return;
+        }
+
+        // Every non-mine cell revealed = win, win message.
+        if (checkWin(mineBoard, revealed, rows, cols)) {
+          gameWon = true;
+          showMessage("You win!", "win");
         }
       });
 
@@ -314,9 +367,10 @@
           if (!cell) return;
           const cellIndex = Number(cell.dataset.index);
 
-          // Same game-over guard as the click handler: once a mine has been
-          // revealed, no further interaction of any kind.
+          // Same terminal-state guards as the click handler: once the game
+          // is over or won, no further interaction of any kind.
           if (gameOver) return;
+          if (gameWon) return;
 
           // Flags only go on unrevealed cells.
           if (revealed[cellIndex]) return;
