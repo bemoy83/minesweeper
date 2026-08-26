@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minesweeper</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #f3f4f6;
+      color: #111827;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: flex;
+      justify-content: center;
+    }
+    .game { text-align: center; }
+    h1 { margin: 0 0 16px; font-size: 28px; }
+    .hud {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .counter {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 6px 10px;
+    }
+    .message { min-width: 110px; font-weight: 700; }
+    .message.win { color: #16a34a; }
+    .message.loss { color: #dc2626; }
+    #restart {
+      padding: 6px 14px;
+      font-size: 15px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #ffffff;
+      cursor: pointer;
+    }
+    #restart:hover { background: #f9fafb; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(9, 34px);
+      gap: 3px;
+      padding: 8px;
+      margin: 0 auto;
+      width: max-content;
+      background: #d1d5db;
+      border-radius: 8px;
+      user-select: none;
+    }
+    .cell {
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #9ca3af;
+      border-radius: 4px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .cell.revealed { background: #f9fafb; cursor: default; }
+    .cell.mine { background: #fee2e2; }
+    .cell.flagged { background: #fde68a; }
+    .cell.n1 { color: #2563eb; }
+    .cell.n2 { color: #16a34a; }
+    .cell.n3 { color: #dc2626; }
+    .cell.n4 { color: #7c3aed; }
+    .cell.n5 { color: #b45309; }
+    .cell.n6 { color: #0d9488; }
+    .cell.n7 { color: #374151; }
+    .cell.n8 { color: #6b7280; }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <h1>Minesweeper</h1>
+    <div class="hud">
+      <span id="mine-counter" class="counter">Mines: 10</span>
+      <span id="message" class="message"></span>
+      <button id="restart" type="button">Restart</button>
+    </div>
+    <div id="board" class="board"></div>
+  </main>
+
+  <script>
+    // ---------- Core board logic (no DOM in this section) ----------
+
+    const SIZE = 9;
+    const MINE_COUNT = 10;
+    const TOTAL_CELLS = SIZE * SIZE;
+
+    // Game state. Each cell: { isMine, adjacent, revealed, flagged }.
+    let cells = [];
+    let gameOver = false; // true once won or lost; blocks all interaction
+    let result = null; // null | 'win' | 'loss'
+
+    function createBoard() {
+      cells = [];
+      for (let cellIndex = 0; cellIndex < TOTAL_CELLS; cellIndex++) {
+        cells.push({ isMine: false, adjacent: 0, revealed: false, flagged: false });
+      }
+
+      // Place exactly MINE_COUNT mines at random, non-duplicate positions.
+      let placed = 0;
+      while (placed < MINE_COUNT) {
+        const cellIndex = Math.floor(Math.random() * TOTAL_CELLS);
+        if (!cells[cellIndex].isMine) {
+          cells[cellIndex].isMine = true;
+          placed++;
+        }
+      }
+
+      // Count adjacent mines (including diagonals) for each non-mine cell.
+      for (let row = 0; row < SIZE; row++) {
+        for (let col = 0; col < SIZE; col++) {
+          const cellIndex = row * SIZE + col;
+          if (cells[cellIndex].isMine) continue;
+          let adjacent = 0;
+          for (const neighbor of neighborIndexes(cellIndex)) {
+            if (cells[neighbor].isMine) adjacent++;
+          }
+          cells[cellIndex].adjacent = adjacent;
+        }
+      }
+
+      gameOver = false;
+      result = null;
+    }
+
+    // The up-to-8 in-bounds neighbor indexes (including diagonals) of a cell.
+    function neighborIndexes(cellIndex) {
+      const row = Math.floor(cellIndex / SIZE);
+      const col = cellIndex % SIZE;
+      const neighbors = [];
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = row + dr;
+          const nc = col + dc;
+          if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+          neighbors.push(nr * SIZE + nc);
+        }
+      }
+      return neighbors;
+    }
+
+    // Flood-fill reveal, starting from an unrevealed cell with 0 adjacent mines.
+    // How it works:
+    //  1. Pop a cell off the stack. If already revealed, skip it (a cell can be
+    //     pushed more than once).
+    //  2. Reveal the cell.
+    //  3. If it has 0 adjacent mines, the region continues through it, so push
+    //     every unrevealed neighbor back on the stack. This includes the
+    //     numbered cells bordering the region: they get revealed when popped,
+    //     but since their count is not 0 they don't push anything further —
+    //     which is what makes the numbered cells the natural boundary.
+    //  4. If the cell has a nonzero count, it's revealed but not expanded.
+    //  A mine can never be revealed this way, because 0-count cells have no
+    //  mines among their neighbors by definition.
+    function revealArea(startIndex) {
+      const stack = [startIndex];
+      while (stack.length > 0) {
+        const cellIndex = stack.pop();
+        const cell = cells[cellIndex];
+        if (cell.revealed) continue;
+        cell.revealed = true;
+        if (cell.adjacent === 0) {
+          for (const neighbor of neighborIndexes(cellIndex)) {
+            if (!cells[neighbor].revealed) stack.push(neighbor);
+          }
+        }
+      }
+    }
+
+    function countFlags() {
+      let flags = 0;
+      for (const cell of cells) if (cell.flagged) flags++;
+      return flags;
+    }
+
+    function hasWon() {
+      return cells.every(function (cell) { return cell.isMine || cell.revealed; });
+    }
+
+    // ---------- Interaction ----------
+
+    function handleReveal(cellIndex) {
+      if (gameOver) return;
+      const cell = cells[cellIndex];
+      if (!cell || cell.revealed || cell.flagged) return;
+
+      if (cell.isMine) {
+        // Stepped on a mine: reveal just that mine and stop the game.
+        cell.revealed = true;
+        gameOver = true;
+        result = 'loss';
+      } else {
+        if (cell.adjacent === 0) {
+          revealArea(cellIndex);
+        } else {
+          cell.revealed = true;
+        }
+        if (hasWon()) {
+          gameOver = true;
+          result = 'win';
+        }
+      }
+      render();
+    }
+
+    function handleFlag(cellIndex) {
+      if (gameOver) return;
+      const cell = cells[cellIndex];
+      if (!cell || cell.revealed) return;
+      cell.flagged = !cell.flagged;
+      render();
+    }
+
+    function handleRestart() {
+      createBoard();
+      render();
+    }
+
+    // ---------- Rendering (DOM) ----------
+
+    const boardEl = document.getElementById('board');
+    const counterEl = document.getElementById('mine-counter');
+    const messageEl = document.getElementById('message');
+    const restartEl = document.getElementById('restart');
+
+    function render() {
+      counterEl.textContent = 'Mines: ' + (MINE_COUNT - countFlags());
+
+      if (result === 'win') {
+        messageEl.textContent = 'You win!';
+        messageEl.className = 'message win';
+      } else if (result === 'loss') {
+        messageEl.textContent = 'You lost!';
+        messageEl.className = 'message loss';
+      } else {
+        messageEl.textContent = '';
+        messageEl.className = 'message';
+      }
+
+      boardEl.innerHTML = '';
+      for (let cellIndex = 0; cellIndex < TOTAL_CELLS; cellIndex++) {
+        const cell = cells[cellIndex];
+        const div = document.createElement('div');
+        let className = 'cell';
+        let text = '';
+        if (cell.revealed) {
+          className += ' revealed';
+          if (cell.isMine) {
+            className += ' mine';
+            text = '\u{1F4A3}';
+          } else if (cell.adjacent > 0) {
+            className += ' n' + cell.adjacent;
+            text = String(cell.adjacent);
+          }
+        } else if (cell.flagged) {
+          className += ' flagged';
+          text = '\u{1F6A9}';
+        }
+        div.className = className;
+        div.textContent = text;
+        div.dataset.index = cellIndex;
+        boardEl.appendChild(div);
+      }
+    }
+
+    // Event delegation on the board: find the cell under the event.
+    boardEl.addEventListener('click', function (event) {
+      const target = event.target.closest('.cell');
+      if (!target) return;
+      handleReveal(Number(target.dataset.index));
+    });
+
+    boardEl.addEventListener('contextmenu', function (event) {
+      event.preventDefault();
+      const target = event.target.closest('.cell');
+      if (!target) return;
+      handleFlag(Number(target.dataset.index));
+    });
+
+    restartEl.addEventListener('click', handleRestart);
+
+    createBoard();
+    render();
+  </script>
+</body>
+</html>
