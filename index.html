@@ -32,6 +32,7 @@
         grid-template-rows: repeat(9, var(--cell-size));
         border-top: 1px solid var(--grid-line);
         border-left: 1px solid var(--grid-line);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
       }
 
       .cell {
@@ -76,6 +77,23 @@
         line-height: var(--cell-size);
       }
 
+      /* Mine counter above the message: remaining mines (total minus
+         flagged). min-width keeps the box from changing size as the digits
+         change, so nothing below it shifts. */
+      .counter {
+        min-width: 4ch;
+        margin-bottom: 8px;
+        padding: 2px 10px;
+        background: #333;
+        color: #ff5555;
+        border-radius: 4px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 20px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        text-align: center;
+      }
+
       /* Win/loss banner above the grid: empty until the game ends, then
          .win / .loss (set by JS) colors it. min-height keeps the grid from
          shifting down when the text appears. */
@@ -91,11 +109,29 @@
       .message.loss {
         color: #b3261e;
       }
+
+      /* Restart button below the grid: plain system styling, no framework. */
+      .restart {
+        margin-top: 12px;
+        padding: 6px 16px;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        background: var(--cell-bg);
+        border: 1px solid var(--grid-line);
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .restart:hover {
+        background: var(--cell-hover);
+      }
     </style>
   </head>
   <body>
+    <div class="counter" id="mine-counter">10</div>
     <div class="message" id="message"></div>
     <div class="grid" id="grid"></div>
+    <button class="restart" id="restart-button" type="button">Restart</button>
 
     <script>
       // Build the 9x9 grid of empty cells. No game logic yet -- this only
@@ -181,12 +217,13 @@
         return counts;
       }
 
-      // This page's board for the game.
+      // This page's board for the game. mineBoard and adjacencyCounts are
+      // `let` (not `const`) so resetGame() can hand out fresh arrays.
       const rows = 9;
       const cols = 9;
       const mineCount = 10;
-      const mineBoard = placeMines(rows, cols, mineCount);
-      const adjacencyCounts = countAdjacentMines(mineBoard, rows, cols);
+      let mineBoard = placeMines(rows, cols, mineCount);
+      let adjacencyCounts = countAdjacentMines(mineBoard, rows, cols);
       // Which cells the player has opened. Tracked here, not by reading the
       // DOM, so the game state stays in one place.
       const revealed = new Array(rows * cols).fill(false);
@@ -287,6 +324,21 @@
         messageEl.classList.add(cssClass);
       }
 
+      // Mine counter: remaining mines = total mines minus flags placed.
+      // The flag count comes from the `flagged` array (the source of truth),
+      // not by scanning the DOM. Only ever changes when a flag is toggled in
+      // the contextmenu handler below, so after a win or loss it freezes in
+      // place along with the rest of the board.
+      const mineCounterEl = document.querySelector("#mine-counter");
+      function updateMineCounter() {
+        let flaggedCount = 0;
+        for (let i = 0; i < flagged.length; i++) {
+          if (flagged[i]) flaggedCount++;
+        }
+        mineCounterEl.textContent = String(mineCount - flaggedCount);
+      }
+      updateMineCounter();
+
       // ---- Reveal: DOM ----
 
       // Show one cell in its revealed state: number, blank, or mine.
@@ -379,7 +431,39 @@
           flagged[cellIndex] = !flagged[cellIndex];
           cell.classList.toggle("flagged", flagged[cellIndex]);
           cell.textContent = flagged[cellIndex] ? "🚩" : "";
+          updateMineCounter();
         });
+
+      // ---- Restart ----
+      //
+      // Put the game back to its before-first-click state. Everything the
+      // game tracks is reset here in one place:
+      //   state:    mineBoard, adjacencyCounts, revealed, flagged,
+      //             gameOver, gameWon
+      //   visuals:  every cell's classes/text/dataset, the win/loss
+      //             message, and the mine counter
+      // A fresh random mine layout each restart is the classic behavior.
+      function resetGame() {
+        mineBoard = placeMines(rows, cols, mineCount);
+        adjacencyCounts = countAdjacentMines(mineBoard, rows, cols);
+        revealed.fill(false);
+        flagged.fill(false);
+        gameOver = false;
+        gameWon = false;
+
+        for (const cell of document.querySelectorAll("#grid .cell")) {
+          cell.classList.remove("revealed", "mine", "flagged");
+          cell.dataset.revealed = "false";
+          cell.textContent = "";
+        }
+        messageEl.textContent = "";
+        messageEl.classList.remove("win", "loss");
+        updateMineCounter();
+      }
+
+      document
+        .querySelector("#restart-button")
+        .addEventListener("click", resetGame);
     </script>
   </body>
 </html>
